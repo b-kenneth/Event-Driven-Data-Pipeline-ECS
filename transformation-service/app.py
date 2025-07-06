@@ -21,15 +21,19 @@ class DataTransformer:
         self.s3_handler = S3Handler()
         self.dynamodb_handler = DynamoDBHandler()
         
-        # Initialize Spark session
+        # Initialize Spark session with S3 dependencies
         self.spark = SparkSession.builder \
             .appName("ECommerceDataTransformation") \
             .config("spark.sql.adaptive.enabled", "true") \
             .config("spark.sql.adaptive.coalescePartitions.enabled", "true") \
             .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer") \
+            .config("spark.jars.packages", "org.apache.hadoop:hadoop-aws:3.3.2") \
+            .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem") \
+            .config("spark.hadoop.fs.s3a.aws.credentials.provider", "com.amazonaws.auth.DefaultAWSCredentialsProviderChain") \
             .getOrCreate()
-        
+    
         self.spark.sparkContext.setLogLevel("WARN")
+
         
         # Environment variables
         self.bucket_name = os.environ.get('S3_BUCKET_NAME')
