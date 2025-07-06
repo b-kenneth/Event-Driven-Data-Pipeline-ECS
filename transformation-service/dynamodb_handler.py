@@ -3,6 +3,7 @@ import pandas as pd
 from decimal import Decimal
 from datetime import datetime
 import logging
+import os
 from typing import Dict, List, Any
 
 class DynamoDBHandler:
