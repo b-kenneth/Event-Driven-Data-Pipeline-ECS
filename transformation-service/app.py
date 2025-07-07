@@ -33,16 +33,23 @@ class DataTransformer:
             .getOrCreate()
     
         self.spark.sparkContext.setLogLevel("WARN")
-
         
         # Environment variables
         self.bucket_name = os.environ.get('S3_BUCKET_NAME')
         self.batch_id = os.environ.get('BATCH_ID', f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
         
-        # File paths from environment variables
-        self.products_key = os.environ.get('PRODUCTS_FILE_KEY')
-        self.orders_key = os.environ.get('ORDERS_FILE_KEY')
-        self.order_items_key = os.environ.get('ORDER_ITEMS_FILE_KEY')
+        # Parse file lists from environment variables (NEW: handles multiple files)
+        self.products_files = json.loads(os.environ.get('PRODUCTS_FILES', '[]'))
+        self.orders_files = json.loads(os.environ.get('ORDERS_FILES', '[]'))
+        self.order_items_files = json.loads(os.environ.get('ORDER_ITEMS_FILES', '[]'))
+        
+        # Backward compatibility: if old single file env vars exist, use them
+        if not self.products_files and os.environ.get('PRODUCTS_FILE_KEY'):
+            self.products_files = [os.environ.get('PRODUCTS_FILE_KEY')]
+        if not self.orders_files and os.environ.get('ORDERS_FILE_KEY'):
+            self.orders_files = [os.environ.get('ORDERS_FILE_KEY')]
+        if not self.order_items_files and os.environ.get('ORDER_ITEMS_FILE_KEY'):
+            self.order_items_files = [os.environ.get('ORDER_ITEMS_FILE_KEY')]
         
         self.transformation_report = TransformationReport(self.batch_id)
         self.kpi_calculator = KPICalculator(self.spark)
@@ -51,6 +58,7 @@ class DataTransformer:
         """Main transformation orchestrator"""
         try:
             self.logger.info(f"🚀 Starting transformation for batch: {self.batch_id}")
+            self.logger.info(f"📁 Files to process: {len(self.products_files)} products, {len(self.orders_files)} orders, {len(self.order_items_files)} order_items")
             
             # Stage 1: Load validated data
             dataframes = self._load_validated_data()
@@ -84,61 +92,14 @@ class DataTransformer:
             self.spark.stop()
     
     def _load_validated_data(self) -> Optional[Dict]:
-        """Stage 1: Load validated data from S3"""
-        self.logger.info("📚 Stage 1: Loading validated data")
+        """Stage 1: Load ALL validated data from S3"""
+        self.logger.info("📚 Stage 1: Loading all validated data")
         
         try:
-            # Define schemas for better performance
-            products_schema = StructType([
-                StructField("id", IntegerType(), True),
-                StructField("sku", StringType(), True),
-                StructField("cost", DoubleType(), True),
-                StructField("category", StringType(), True),
-                StructField("name", StringType(), True),
-                StructField("brand", StringType(), True),
-                StructField("retail_price", DoubleType(), True),
-                StructField("department", StringType(), True)
-            ])
-            
-            orders_schema = StructType([
-                StructField("order_id", IntegerType(), True),
-                StructField("user_id", IntegerType(), True),
-                StructField("status", StringType(), True),
-                StructField("created_at", TimestampType(), True),
-                StructField("returned_at", TimestampType(), True),
-                StructField("shipped_at", TimestampType(), True),
-                StructField("delivered_at", TimestampType(), True),
-                StructField("num_of_item", IntegerType(), True)
-            ])
-            
-            order_items_schema = StructType([
-                StructField("id", IntegerType(), True),
-                StructField("order_id", IntegerType(), True),
-                StructField("user_id", IntegerType(), True),
-                StructField("product_id", IntegerType(), True),
-                StructField("status", StringType(), True),
-                StructField("created_at", TimestampType(), True),
-                StructField("shipped_at", TimestampType(), True),
-                StructField("delivered_at", TimestampType(), True),
-                StructField("returned_at", TimestampType(), True),
-                StructField("sale_price", DoubleType(), True)
-            ])
-            
-            # Load data from S3
-            products_df = self.spark.read \
-                .option("header", "true") \
-                .schema(products_schema) \
-                .csv(f"s3a://{self.bucket_name}/{self.products_key}")
-            
-            orders_df = self.spark.read \
-                .option("header", "true") \
-                .schema(orders_schema) \
-                .csv(f"s3a://{self.bucket_name}/{self.orders_key}")
-            
-            order_items_df = self.spark.read \
-                .option("header", "true") \
-                .schema(order_items_schema) \
-                .csv(f"s3a://{self.bucket_name}/{self.order_items_key}")
+            # Load and union all files of each type
+            products_df = self._load_multiple_files(self.products_files, "products")
+            orders_df = self._load_multiple_files(self.orders_files, "orders")  
+            order_items_df = self._load_multiple_files(self.order_items_files, "order_items")
             
             # Cache dataframes for multiple operations
             products_df.cache()
@@ -150,7 +111,8 @@ class DataTransformer:
             orders_count = orders_df.count()
             order_items_count = order_items_df.count()
             
-            self.logger.info(f"✅ Data loaded: {products_count} products, {orders_count} orders, {order_items_count} order items")
+            self.logger.info(f"✅ All data loaded: {products_count} products, {orders_count} orders, {order_items_count} order items")
+            self.logger.info(f"📁 Files processed: {len(self.products_files)} products, {len(self.orders_files)} orders, {len(self.order_items_files)} order_items")
             
             return {
                 'products': products_df,
@@ -160,12 +122,87 @@ class DataTransformer:
                     'products': products_count,
                     'orders': orders_count,
                     'order_items': order_items_count
+                },
+                'files_processed': {
+                    'products': len(self.products_files),
+                    'orders': len(self.orders_files),
+                    'order_items': len(self.order_items_files)
                 }
             }
             
         except Exception as e:
             self.logger.error(f"Failed to load data: {str(e)}")
             return None
+
+    def _load_multiple_files(self, file_list: List[str], file_type: str):
+        """Load and union multiple files of the same type"""
+        
+        if not file_list:
+            raise ValueError(f"No {file_type} files provided")
+        
+        self.logger.info(f"Loading {len(file_list)} {file_type} files")
+        
+        # Define schemas for better performance
+        schemas = {
+            'products': StructType([
+                StructField("id", IntegerType(), True),
+                StructField("sku", StringType(), True),
+                StructField("cost", DoubleType(), True),
+                StructField("category", StringType(), True),
+                StructField("name", StringType(), True),
+                StructField("brand", StringType(), True),
+                StructField("retail_price", DoubleType(), True),
+                StructField("department", StringType(), True)
+            ]),
+            'orders': StructType([
+                StructField("order_id", IntegerType(), True),
+                StructField("user_id", IntegerType(), True),
+                StructField("status", StringType(), True),
+                StructField("created_at", TimestampType(), True),
+                StructField("returned_at", TimestampType(), True),
+                StructField("shipped_at", TimestampType(), True),
+                StructField("delivered_at", TimestampType(), True),
+                StructField("num_of_item", IntegerType(), True)
+            ]),
+            'order_items': StructType([
+                StructField("id", IntegerType(), True),
+                StructField("order_id", IntegerType(), True),
+                StructField("user_id", IntegerType(), True),
+                StructField("product_id", IntegerType(), True),
+                StructField("status", StringType(), True),
+                StructField("created_at", TimestampType(), True),
+                StructField("shipped_at", TimestampType(), True),
+                StructField("delivered_at", TimestampType(), True),
+                StructField("returned_at", TimestampType(), True),
+                StructField("sale_price", DoubleType(), True)
+            ])
+        }
+        
+        # Load first file to get schema
+        first_df = self.spark.read \
+            .option("header", "true") \
+            .schema(schemas[file_type]) \
+            .csv(f"s3a://{self.bucket_name}/{file_list[0]}")
+        
+        self.logger.info(f"✅ Loaded {file_type} file: {file_list[0]}")
+        
+        # If only one file, return it
+        if len(file_list) == 1:
+            return first_df
+        
+        # Union all files
+        combined_df = first_df
+        for file_key in file_list[1:]:
+            df = self.spark.read \
+                .option("header", "true") \
+                .schema(schemas[file_type]) \
+                .csv(f"s3a://{self.bucket_name}/{file_key}")
+            
+            combined_df = combined_df.union(df)
+            self.logger.info(f"✅ Added {file_type} file: {file_key}")
+        
+        self.logger.info(f"✅ Combined {len(file_list)} {file_type} files into single DataFrame")
+        return combined_df
     
     def _compute_kpis(self, dataframes: Dict) -> Optional[Dict]:
         """Stage 2: Compute business KPIs"""
