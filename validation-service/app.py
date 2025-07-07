@@ -72,36 +72,36 @@ class DataValidator:
             return False
     
     def _validate_file_structures(self) -> bool:
-        """Stage 1: Fast structure validation"""
+        """Stage 1: Fast structure validation - handle multiple files"""
         self.logger.info("🔍 Stage 1: Validating file structures")
         
-        required_files = {
+        file_keys = {
             'products': self.products_key,
             'orders': self.orders_key,
             'order_items': self.order_items_key
         }
         
-        for file_type, file_key in required_files.items():
+        for file_type, file_key in file_keys.items():
             if not file_key:
                 self.logger.error(f"Missing environment variable for {file_type} file")
                 return False
                 
-            # Check if file exists and validate headers
             try:
-                # Read just the first few rows to check structure
+                # Check if file exists and validate headers
                 df_sample = self.s3_handler.read_csv_sample(self.bucket_name, file_key, nrows=5)
                 
                 if not self.validation_rules.validate_headers(file_type, df_sample.columns.tolist()):
                     self.logger.error(f"Invalid headers for {file_type} file: {file_key}")
                     return False
                     
-                self.logger.info(f"✅ Structure validation passed for {file_type}")
+                self.logger.info(f"✅ Structure validation passed for {file_type}: {file_key}")
                 
             except Exception as e:
                 self.logger.error(f"Failed to read {file_type} file {file_key}: {str(e)}")
                 return False
         
         return True
+
     
     def _load_reference_data(self) -> Optional[Dict]:
         """Stage 2: Load reference data into memory"""
