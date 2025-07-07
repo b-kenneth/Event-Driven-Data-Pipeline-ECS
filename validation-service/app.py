@@ -19,10 +19,18 @@ class DataValidator:
         self.bucket_name = os.environ.get('S3_BUCKET_NAME')
         self.batch_id = os.environ.get('BATCH_ID', f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
         
-        # File paths from environment variables
-        self.products_key = os.environ.get('PRODUCTS_FILE_KEY')
-        self.orders_key = os.environ.get('ORDERS_FILE_KEY')
-        self.order_items_key = os.environ.get('ORDER_ITEMS_FILE_KEY')
+        # Parse file lists from environment variables (NEW: handles multiple files)
+        self.products_files = json.loads(os.environ.get('PRODUCTS_FILES', '[]'))
+        self.orders_files = json.loads(os.environ.get('ORDERS_FILES', '[]'))
+        self.order_items_files = json.loads(os.environ.get('ORDER_ITEMS_FILES', '[]'))
+        
+        # Backward compatibility: if old single file env vars exist, use them
+        if not self.products_files and os.environ.get('PRODUCTS_FILE_KEY'):
+            self.products_files = [os.environ.get('PRODUCTS_FILE_KEY')]
+        if not self.orders_files and os.environ.get('ORDERS_FILE_KEY'):
+            self.orders_files = [os.environ.get('ORDERS_FILE_KEY')]
+        if not self.order_items_files and os.environ.get('ORDER_ITEMS_FILE_KEY'):
+            self.order_items_files = [os.environ.get('ORDER_ITEMS_FILE_KEY')]
         
         self.validation_report = ValidationReport(self.batch_id)
         
@@ -30,6 +38,7 @@ class DataValidator:
         """Main validation orchestrator for the complete batch"""
         try:
             self.logger.info(f"🚀 Starting validation for batch: {self.batch_id}")
+            self.logger.info(f"📁 Files to process: {len(self.products_files)} products, {len(self.orders_files)} orders, {len(self.order_items_files)} order_items")
             
             # Stage 1: Structure validation (fail fast)
             if not self._validate_file_structures():
@@ -72,47 +81,61 @@ class DataValidator:
             return False
     
     def _validate_file_structures(self) -> bool:
-        """Stage 1: Fast structure validation - handle multiple files"""
-        self.logger.info("🔍 Stage 1: Validating file structures")
+        """Stage 1: Fast structure validation for ALL files"""
+        self.logger.info("🔍 Stage 1: Validating file structures for all files")
         
-        file_keys = {
-            'products': self.products_key,
-            'orders': self.orders_key,
-            'order_items': self.order_items_key
+        file_groups = {
+            'products': self.products_files,
+            'orders': self.orders_files,
+            'order_items': self.order_items_files
         }
         
-        for file_type, file_key in file_keys.items():
-            if not file_key:
-                self.logger.error(f"Missing environment variable for {file_type} file")
+        for file_type, file_list in file_groups.items():
+            if not file_list:
+                self.logger.error(f"No {file_type} files found")
                 return False
                 
-            try:
-                # Check if file exists and validate headers
-                df_sample = self.s3_handler.read_csv_sample(self.bucket_name, file_key, nrows=5)
-                
-                if not self.validation_rules.validate_headers(file_type, df_sample.columns.tolist()):
-                    self.logger.error(f"Invalid headers for {file_type} file: {file_key}")
-                    return False
+            self.logger.info(f"Validating {len(file_list)} {file_type} files")
+            
+            for file_key in file_list:
+                try:
+                    # Check if file exists and validate headers
+                    df_sample = self.s3_handler.read_csv_sample(self.bucket_name, file_key, nrows=5)
                     
-                self.logger.info(f"✅ Structure validation passed for {file_type}: {file_key}")
-                
-            except Exception as e:
-                self.logger.error(f"Failed to read {file_type} file {file_key}: {str(e)}")
-                return False
+                    if not self.validation_rules.validate_headers(file_type, df_sample.columns.tolist()):
+                        self.logger.error(f"Invalid headers for {file_type} file: {file_key}")
+                        return False
+                        
+                    self.logger.info(f"✅ Structure validation passed for {file_type}: {file_key}")
+                    
+                except Exception as e:
+                    self.logger.error(f"Failed to read {file_type} file {file_key}: {str(e)}")
+                    return False
         
         return True
-
     
     def _load_reference_data(self) -> Optional[Dict]:
-        """Stage 2: Load reference data into memory"""
-        self.logger.info("📚 Stage 2: Loading reference data")
+        """Stage 2: Load reference data into memory from ALL files"""
+        self.logger.info("📚 Stage 2: Loading reference data from all files")
         
         try:
-            # Load products as reference data
-            products_df = self.s3_handler.read_csv(self.bucket_name, self.products_key)
+            # Load and combine all products files
+            all_products_dfs = []
+            for products_file in self.products_files:
+                df = self.s3_handler.read_csv(self.bucket_name, products_file)
+                all_products_dfs.append(df)
+                self.logger.info(f"Loaded products file: {products_file} ({len(df)} records)")
             
-            # Load orders for cross-file validation
-            orders_df = self.s3_handler.read_csv(self.bucket_name, self.orders_key)
+            products_df = pd.concat(all_products_dfs, ignore_index=True)
+            
+            # Load and combine all orders files
+            all_orders_dfs = []
+            for orders_file in self.orders_files:
+                df = self.s3_handler.read_csv(self.bucket_name, orders_file)
+                all_orders_dfs.append(df)
+                self.logger.info(f"Loaded orders file: {orders_file} ({len(df)} records)")
+            
+            orders_df = pd.concat(all_orders_dfs, ignore_index=True)
             
             reference_data = {
                 'products_df': products_df,
@@ -133,28 +156,32 @@ class DataValidator:
             return None
     
     def _validate_products(self) -> Dict:
-        """Validate products dataset"""
-        self.logger.info("🛍️ Stage 3a: Validating products dataset")
+        """Validate ALL products files"""
+        self.logger.info(f"🛍️ Stage 3a: Validating {len(self.products_files)} products files")
         
         try:
-            chunk_results = []
+            all_chunk_results = []
             total_records = 0
             
-            # Process in chunks for scalability
-            for chunk_num, chunk in enumerate(self.s3_handler.read_csv_chunks(
-                self.bucket_name, self.products_key, chunksize=10000
-            )):
-                total_records += len(chunk)
+            # Process each products file
+            for file_idx, file_key in enumerate(self.products_files):
+                self.logger.info(f"Processing products file {file_idx + 1}/{len(self.products_files)}: {file_key}")
                 
-                chunk_result = self.validation_rules.validate_products_chunk(chunk, chunk_num)
-                chunk_results.append(chunk_result)
-                
-                self.logger.info(f"Processed products chunk {chunk_num + 1}: {len(chunk)} records")
+                # Process in chunks for scalability
+                for chunk_num, chunk in enumerate(self.s3_handler.read_csv_chunks(
+                    self.bucket_name, file_key, chunksize=10000
+                )):
+                    total_records += len(chunk)
+                    
+                    chunk_result = self.validation_rules.validate_products_chunk(chunk, f"{file_idx}_{chunk_num}")
+                    all_chunk_results.append(chunk_result)
+                    
+                    self.logger.info(f"Processed products chunk {file_idx}_{chunk_num}: {len(chunk)} records")
             
-            # Aggregate results
-            total_errors = sum(result['total_errors'] for result in chunk_results)
+            # Aggregate results from all files
+            total_errors = sum(result['total_errors'] for result in all_chunk_results)
             error_details = {}
-            for result in chunk_results:
+            for result in all_chunk_results:
                 for error_type, errors in result['error_details'].items():
                     if error_type not in error_details:
                         error_details[error_type] = []
@@ -167,9 +194,11 @@ class DataValidator:
                 'total_records': total_records,
                 'valid_records': total_records - total_errors,
                 'total_errors': total_errors,
-                'error_details': error_details
+                'error_details': error_details,
+                'files_processed': len(self.products_files)
             }
             
+            self.logger.info(f"✅ Products validation completed: {len(self.products_files)} files, {total_records} total records")
             self.validation_report.add_dataset_result('products', result)
             return result
             
@@ -178,29 +207,33 @@ class DataValidator:
             return {'success': False, 'error': str(e)}
     
     def _validate_orders(self, reference_data: Dict) -> Dict:
-        """Validate orders dataset"""
-        self.logger.info("📦 Stage 3b: Validating orders dataset")
+        """Validate ALL orders files"""
+        self.logger.info(f"📦 Stage 3b: Validating {len(self.orders_files)} orders files")
         
         try:
-            chunk_results = []
+            all_chunk_results = []
             total_records = 0
             
-            for chunk_num, chunk in enumerate(self.s3_handler.read_csv_chunks(
-                self.bucket_name, self.orders_key, chunksize=10000
-            )):
-                total_records += len(chunk)
+            # Process each orders file
+            for file_idx, file_key in enumerate(self.orders_files):
+                self.logger.info(f"Processing orders file {file_idx + 1}/{len(self.orders_files)}: {file_key}")
                 
-                chunk_result = self.validation_rules.validate_orders_chunk(
-                    chunk, chunk_num, reference_data
-                )
-                chunk_results.append(chunk_result)
-                
-                self.logger.info(f"Processed orders chunk {chunk_num + 1}: {len(chunk)} records")
+                for chunk_num, chunk in enumerate(self.s3_handler.read_csv_chunks(
+                    self.bucket_name, file_key, chunksize=10000
+                )):
+                    total_records += len(chunk)
+                    
+                    chunk_result = self.validation_rules.validate_orders_chunk(
+                        chunk, f"{file_idx}_{chunk_num}", reference_data
+                    )
+                    all_chunk_results.append(chunk_result)
+                    
+                    self.logger.info(f"Processed orders chunk {file_idx}_{chunk_num}: {len(chunk)} records")
             
             # Aggregate results
-            total_errors = sum(result['total_errors'] for result in chunk_results)
+            total_errors = sum(result['total_errors'] for result in all_chunk_results)
             error_details = {}
-            for result in chunk_results:
+            for result in all_chunk_results:
                 for error_type, errors in result['error_details'].items():
                     if error_type not in error_details:
                         error_details[error_type] = []
@@ -213,9 +246,11 @@ class DataValidator:
                 'total_records': total_records,
                 'valid_records': total_records - total_errors,
                 'total_errors': total_errors,
-                'error_details': error_details
+                'error_details': error_details,
+                'files_processed': len(self.orders_files)
             }
             
+            self.logger.info(f"✅ Orders validation completed: {len(self.orders_files)} files, {total_records} total records")
             self.validation_report.add_dataset_result('orders', result)
             return result
             
@@ -224,29 +259,33 @@ class DataValidator:
             return {'success': False, 'error': str(e)}
     
     def _validate_order_items(self, reference_data: Dict) -> Dict:
-        """Validate order items dataset with referential integrity"""
-        self.logger.info("🛒 Stage 3c: Validating order items dataset")
+        """Validate ALL order items files with referential integrity"""
+        self.logger.info(f"🛒 Stage 3c: Validating {len(self.order_items_files)} order items files")
         
         try:
-            chunk_results = []
+            all_chunk_results = []
             total_records = 0
             
-            for chunk_num, chunk in enumerate(self.s3_handler.read_csv_chunks(
-                self.bucket_name, self.order_items_key, chunksize=10000
-            )):
-                total_records += len(chunk)
+            # Process each order items file
+            for file_idx, file_key in enumerate(self.order_items_files):
+                self.logger.info(f"Processing order items file {file_idx + 1}/{len(self.order_items_files)}: {file_key}")
                 
-                chunk_result = self.validation_rules.validate_order_items_chunk(
-                    chunk, chunk_num, reference_data
-                )
-                chunk_results.append(chunk_result)
-                
-                self.logger.info(f"Processed order items chunk {chunk_num + 1}: {len(chunk)} records")
+                for chunk_num, chunk in enumerate(self.s3_handler.read_csv_chunks(
+                    self.bucket_name, file_key, chunksize=10000
+                )):
+                    total_records += len(chunk)
+                    
+                    chunk_result = self.validation_rules.validate_order_items_chunk(
+                        chunk, f"{file_idx}_{chunk_num}", reference_data
+                    )
+                    all_chunk_results.append(chunk_result)
+                    
+                    self.logger.info(f"Processed order items chunk {file_idx}_{chunk_num}: {len(chunk)} records")
             
             # Aggregate results
-            total_errors = sum(result['total_errors'] for result in chunk_results)
+            total_errors = sum(result['total_errors'] for result in all_chunk_results)
             error_details = {}
-            for result in chunk_results:
+            for result in all_chunk_results:
                 for error_type, errors in result['error_details'].items():
                     if error_type not in error_details:
                         error_details[error_type] = []
@@ -259,9 +298,11 @@ class DataValidator:
                 'total_records': total_records,
                 'valid_records': total_records - total_errors,
                 'total_errors': total_errors,
-                'error_details': error_details
+                'error_details': error_details,
+                'files_processed': len(self.order_items_files)
             }
             
+            self.logger.info(f"✅ Order items validation completed: {len(self.order_items_files)} files, {total_records} total records")
             self.validation_report.add_dataset_result('order_items', result)
             return result
             
