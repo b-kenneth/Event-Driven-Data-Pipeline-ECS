@@ -1,0 +1,51 @@
+name: Test Data Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install dependencies
+      run: |
+        pip install -r requirements-test.txt
+    
+    - name: Run Lambda tests
+      run: |
+        pytest tests/test_file_detector.py -v
+        pytest tests/test_file_archiver.py -v
+    
+    - name: Run validation service tests
+      run: |
+        cd validation-service
+        pytest tests/ -v
+    
+    - name: Run transformation service tests
+      run: |
+        cd transformation-service
+        pytest tests/ -v
+    
+    - name: Run integration tests
+      run: |
+        pytest tests/test_integration.py -v
+    
+    - name: Generate test coverage report
+      run: |
+        pytest --cov=lambda_functions --cov=validation-service --cov=transformation-service --cov-report=xml
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
