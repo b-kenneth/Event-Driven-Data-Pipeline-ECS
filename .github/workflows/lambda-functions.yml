@@ -39,7 +39,7 @@ jobs:
         zip -r ../../file-detector-deployment.zip .
         cd ../..
         
-        aws lambda wait function-updated --function-name ecommerce-file-detector
+        aws lambda wait function-updated --function-name ecs-pipeline-trigger
         aws lambda update-function-code \
           --function-name ecs-pipeline-trigger \
           --zip-file fileb://file-detector-deployment.zip
