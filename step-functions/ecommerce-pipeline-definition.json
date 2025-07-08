@@ -1,0 +1,160 @@
+{
+  "Comment": "E-commerce data pipeline with archival",
+  "StartAt": "ValidateData",
+  "States": {
+    "ValidateData": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::ecs:runTask.sync",
+      "Parameters": {
+        "LaunchType": "FARGATE",
+        "Cluster": "ecommerce-data-pipeline-cluster",
+        "TaskDefinition": "ecommerce-validation-task",
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "Subnets": [
+              "subnet-07714d8205ca8b03f",
+              "subnet-093942cd3e5e4df00"
+            ],
+            "SecurityGroups": [
+              "sg-01227b8bb88635f5a"
+            ],
+            "AssignPublicIp": "ENABLED"
+          }
+        },
+        "Overrides": {
+          "ContainerOverrides": [
+            {
+              "Name": "validation-container",
+              "Environment": [
+                {
+                  "Name": "PRODUCTS_FILES",
+                  "Value.$": "States.JsonToString($.products_files)"
+                },
+                {
+                  "Name": "ORDERS_FILES",
+                  "Value.$": "States.JsonToString($.orders_files)"
+                },
+                {
+                  "Name": "ORDER_ITEMS_FILES",
+                  "Value.$": "States.JsonToString($.order_items_files)"
+                },
+                {
+                  "Name": "BATCH_ID",
+                  "Value.$": "$.batch_id"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "ResultPath": "$.validation_result",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "MarkFilesAsFailed",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "TransformData"
+    },
+    "TransformData": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::ecs:runTask.sync",
+      "Parameters": {
+        "LaunchType": "FARGATE",
+        "Cluster": "ecommerce-data-pipeline-cluster",
+        "TaskDefinition": "ecommerce-transformation-task",
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "Subnets": [
+              "subnet-07714d8205ca8b03f",
+              "subnet-093942cd3e5e4df00"
+            ],
+            "SecurityGroups": [
+              "sg-01227b8bb88635f5a"
+            ],
+            "AssignPublicIp": "ENABLED"
+          }
+        },
+        "Overrides": {
+          "ContainerOverrides": [
+            {
+              "Name": "transformation-container",
+              "Environment": [
+                {
+                  "Name": "PRODUCTS_FILES",
+                  "Value.$": "States.JsonToString($.products_files)"
+                },
+                {
+                  "Name": "ORDERS_FILES",
+                  "Value.$": "States.JsonToString($.orders_files)"
+                },
+                {
+                  "Name": "ORDER_ITEMS_FILES",
+                  "Value.$": "States.JsonToString($.order_items_files)"
+                },
+                {
+                  "Name": "BATCH_ID",
+                  "Value.$": "$.batch_id"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "ResultPath": "$.transformation_result",
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "MarkFilesAsFailed",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "ArchiveProcessedFiles"
+    },
+    "ArchiveProcessedFiles": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "ecommerce-file-archiver",
+        "Payload": {
+          "products_files.$": "$.products_files",
+          "orders_files.$": "$.orders_files",
+          "order_items_files.$": "$.order_items_files",
+          "batch_id.$": "$.batch_id",
+          "status": "SUCCESS"
+        }
+      },
+      "Next": "PipelineSuccess"
+    },
+    "MarkFilesAsFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "ecommerce-file-archiver",
+        "Payload": {
+          "products_files.$": "$.products_files",
+          "orders_files.$": "$.orders_files",
+          "order_items_files.$": "$.order_items_files",
+          "batch_id.$": "$.batch_id",
+          "status": "FAILED",
+          "error.$": "$.error"
+        }
+      },
+      "Next": "PipelineFailed"
+    },
+    "PipelineSuccess": {
+      "Type": "Succeed",
+      "Comment": "Data pipeline completed successfully"
+    },
+    "PipelineFailed": {
+      "Type": "Fail",
+      "Cause": "Data pipeline failed",
+      "Error": "PipelineError"
+    }
+  }
+}
