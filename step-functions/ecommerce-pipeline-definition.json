@@ -193,8 +193,8 @@
       "Resource": "arn:aws:states:::sns:publish",
       "Parameters": {
         "TopicArn": "arn:aws:sns:us-east-1:499648498289:ecommerce-pipeline-alerts",
-        "Subject": "🚨 E-commerce Pipeline: Validation Failed",
-        "Message": "❌ VALIDATION FAILURE\n\nError Details:\nValidation failed during data processing.\n\nPlease check CloudWatch logs for detailed information."
+        "Subject": "E-commerce Pipeline: Validation Failed",
+        "Message": "VALIDATION FAILURE\n\nError Details:\nValidation failed during data processing.\n\nPlease check CloudWatch logs for detailed information."
       },
       "Next": "MarkFilesAsFailed"
     },
@@ -203,8 +203,8 @@
       "Resource": "arn:aws:states:::sns:publish",
       "Parameters": {
         "TopicArn": "arn:aws:sns:us-east-1:499648498289:ecommerce-pipeline-alerts",
-        "Subject": "🚨 E-commerce Pipeline: Transformation Failed",
-        "Message": "❌ TRANSFORMATION FAILURE\n\nValidation was successful, but transformation failed.\n\nPlease check CloudWatch logs and DynamoDB for detailed information."
+        "Subject": "E-commerce Pipeline: Transformation Failed",
+        "Message": "TRANSFORMATION FAILURE\n\nValidation was successful, but transformation failed.\n\nPlease check CloudWatch logs and DynamoDB for detailed information."
       },
       "Next": "MarkFilesAsFailed"
     },
@@ -213,8 +213,8 @@
       "Resource": "arn:aws:states:::sns:publish",
       "Parameters": {
         "TopicArn": "arn:aws:sns:us-east-1:499648498289:ecommerce-pipeline-alerts",
-        "Subject": "⚠️ E-commerce Pipeline: Archival Failed",
-        "Message": "⚠️ ARCHIVAL FAILURE\n\nData processing was successful, but file archival failed.\nFiles may remain in raw-data directory.\n\nManual cleanup may be required."
+        "Subject": "E-commerce Pipeline: Archival Failed",
+        "Message": "ARCHIVAL FAILURE\n\nData processing was successful, but file archival failed.\nFiles may remain in raw-data directory.\n\nManual cleanup may be required."
       },
       "Next": "PipelinePartialSuccess"
     },
@@ -223,8 +223,8 @@
       "Resource": "arn:aws:states:::sns:publish",
       "Parameters": {
         "TopicArn": "arn:aws:sns:us-east-1:499648498289:ecommerce-pipeline-notifications",
-        "Subject": "✅ E-commerce Pipeline: Processing Complete",
-        "Message": "✅ PIPELINE SUCCESS\n\n📊 Processing Summary:\n• Validation: Completed\n• Transformation: Completed\n• KPIs stored in DynamoDB\n• Files archived successfully\n\nPipeline completed successfully."
+        "Subject": "E-commerce Pipeline: Processing Complete",
+        "Message":  "PIPELINE SUCCESS\n\n Processing Summary:\n• Validation: Completed\n• Transformation: Completed\n• KPIs stored in DynamoDB\n• Files archived successfully\n\nPipeline completed successfully."
       },
       "Next": "PipelineSuccess"
     },
