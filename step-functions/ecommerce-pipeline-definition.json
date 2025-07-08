@@ -11,13 +11,8 @@
         "TaskDefinition": "ecommerce-validation-task",
         "NetworkConfiguration": {
           "AwsvpcConfiguration": {
-            "Subnets": [
-              "subnet-07714d8205ca8b03f",
-              "subnet-093942cd3e5e4df00"
-            ],
-            "SecurityGroups": [
-              "sg-01227b8bb88635f5a"
-            ],
+            "Subnets": ["subnet-YOUR_SUBNET_1", "subnet-YOUR_SUBNET_2"],
+            "SecurityGroups": ["sg-YOUR_SECURITY_GROUP"],
             "AssignPublicIp": "ENABLED"
           }
         },
@@ -68,13 +63,8 @@
         "TaskDefinition": "ecommerce-transformation-task",
         "NetworkConfiguration": {
           "AwsvpcConfiguration": {
-            "Subnets": [
-              "subnet-07714d8205ca8b03f",
-              "subnet-093942cd3e5e4df00"
-            ],
-            "SecurityGroups": [
-              "sg-01227b8bb88635f5a"
-            ],
+            "Subnets": ["subnet-YOUR_SUBNET_1", "subnet-YOUR_SUBNET_2"],
+            "SecurityGroups": ["sg-YOUR_SECURITY_GROUP"],
             "AssignPublicIp": "ENABLED"
           }
         },
