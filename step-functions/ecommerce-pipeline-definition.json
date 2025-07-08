@@ -1,5 +1,5 @@
 {
-  "Comment": "E-commerce data pipeline with archival",
+  "Comment": "Production-ready E-commerce data pipeline with comprehensive error handling and notifications",
   "StartAt": "ValidateData",
   "States": {
     "ValidateData": {
@@ -11,8 +11,13 @@
         "TaskDefinition": "ecommerce-validation-task",
         "NetworkConfiguration": {
           "AwsvpcConfiguration": {
-            "Subnets": ["subnet-YOUR_SUBNET_1", "subnet-YOUR_SUBNET_2"],
-            "SecurityGroups": ["sg-YOUR_SECURITY_GROUP"],
+            "Subnets": [
+              "subnet-07714d8205ca8b03f",
+              "subnet-093942cd3e5e4df00"
+            ],
+            "SecurityGroups": [
+              "sg-01227b8bb88635f5a"
+            ],
             "AssignPublicIp": "ENABLED"
           }
         },
@@ -43,12 +48,30 @@
         }
       },
       "ResultPath": "$.validation_result",
+      "TimeoutSeconds": 1800,
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 30,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 1
+        }
+      ],
       "Catch": [
         {
           "ErrorEquals": [
             "States.ALL"
           ],
-          "Next": "MarkFilesAsFailed",
+          "Next": "NotifyValidationFailure",
           "ResultPath": "$.error"
         }
       ],
@@ -63,8 +86,13 @@
         "TaskDefinition": "ecommerce-transformation-task",
         "NetworkConfiguration": {
           "AwsvpcConfiguration": {
-            "Subnets": ["subnet-YOUR_SUBNET_1", "subnet-YOUR_SUBNET_2"],
-            "SecurityGroups": ["sg-YOUR_SECURITY_GROUP"],
+            "Subnets": [
+              "subnet-07714d8205ca8b03f",
+              "subnet-093942cd3e5e4df00"
+            ],
+            "SecurityGroups": [
+              "sg-01227b8bb88635f5a"
+            ],
             "AssignPublicIp": "ENABLED"
           }
         },
@@ -95,12 +123,30 @@
         }
       },
       "ResultPath": "$.transformation_result",
+      "TimeoutSeconds": 3600,
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.TaskFailed"
+          ],
+          "IntervalSeconds": 60,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        },
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "IntervalSeconds": 10,
+          "MaxAttempts": 1
+        }
+      ],
       "Catch": [
         {
           "ErrorEquals": [
             "States.ALL"
           ],
-          "Next": "MarkFilesAsFailed",
+          "Next": "NotifyTransformationFailure",
           "ResultPath": "$.error"
         }
       ],
@@ -119,6 +165,67 @@
           "status": "SUCCESS"
         }
       },
+      "TimeoutSeconds": 300,
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException"
+          ],
+          "IntervalSeconds": 10,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "NotifyArchivalFailure",
+          "ResultPath": "$.error"
+        }
+      ],
+      "Next": "NotifyPipelineSuccess"
+    },
+    "NotifyValidationFailure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:us-east-1:499648498289:ecommerce-pipeline-alerts",
+        "Subject": "🚨 E-commerce Pipeline: Validation Failed",
+        "Message": "❌ VALIDATION FAILURE\n\nError Details:\nValidation failed during data processing.\n\nPlease check CloudWatch logs for detailed information."
+      },
+      "Next": "MarkFilesAsFailed"
+    },
+    "NotifyTransformationFailure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:us-east-1:499648498289:ecommerce-pipeline-alerts",
+        "Subject": "🚨 E-commerce Pipeline: Transformation Failed",
+        "Message": "❌ TRANSFORMATION FAILURE\n\nValidation was successful, but transformation failed.\n\nPlease check CloudWatch logs and DynamoDB for detailed information."
+      },
+      "Next": "MarkFilesAsFailed"
+    },
+    "NotifyArchivalFailure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:us-east-1:499648498289:ecommerce-pipeline-alerts",
+        "Subject": "⚠️ E-commerce Pipeline: Archival Failed",
+        "Message": "⚠️ ARCHIVAL FAILURE\n\nData processing was successful, but file archival failed.\nFiles may remain in raw-data directory.\n\nManual cleanup may be required."
+      },
+      "Next": "PipelinePartialSuccess"
+    },
+    "NotifyPipelineSuccess": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:us-east-1:499648498289:ecommerce-pipeline-notifications",
+        "Subject": "✅ E-commerce Pipeline: Processing Complete",
+        "Message": "✅ PIPELINE SUCCESS\n\n📊 Processing Summary:\n• Validation: Completed\n• Transformation: Completed\n• KPIs stored in DynamoDB\n• Files archived successfully\n\nPipeline completed successfully."
+      },
       "Next": "PipelineSuccess"
     },
     "MarkFilesAsFailed": {
@@ -135,15 +242,39 @@
           "error.$": "$.error"
         }
       },
+      "TimeoutSeconds": 300,
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException"
+          ],
+          "IntervalSeconds": 10,
+          "MaxAttempts": 3,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [
+            "States.ALL"
+          ],
+          "Next": "PipelineFailed"
+        }
+      ],
       "Next": "PipelineFailed"
     },
     "PipelineSuccess": {
       "Type": "Succeed",
-      "Comment": "Data pipeline completed successfully"
+      "Comment": "Data pipeline completed successfully with notifications sent"
+    },
+    "PipelinePartialSuccess": {
+      "Type": "Succeed",
+      "Comment": "Data processing completed but archival failed - manual intervention may be required"
     },
     "PipelineFailed": {
       "Type": "Fail",
-      "Cause": "Data pipeline failed",
+      "Cause": "Data pipeline failed with notifications sent",
       "Error": "PipelineError"
     }
   }
