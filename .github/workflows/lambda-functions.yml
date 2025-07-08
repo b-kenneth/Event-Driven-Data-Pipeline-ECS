@@ -1,18 +1,6 @@
-name: Deploy Lambda Functions
-
-on:
-  push:
-    branches: [ main ]
-    paths: 
-      - 'lambda-functions/**'
-  workflow_dispatch:
-
-env:
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-
 jobs:
-  deploy-file-detector:
-    name: Deploy File Detector Lambda
+  deploy-lambdas:
+    name: Deploy All Lambda Functions
     runs-on: ubuntu-latest
     
     steps:
@@ -31,68 +19,40 @@ jobs:
       with:
         python-version: '3.9'
 
-    - name: Install dependencies for file-detector
+    # Deploy file-detector first
+    - name: Deploy file-detector Lambda
       run: |
         cd lambda-functions/file-detector
         pip install -r requirements.txt -t .
-
-    - name: Create deployment package for file-detector
-      run: |
-        cd lambda-functions/file-detector
         zip -r ../../file-detector-deployment.zip .
-
-    - name: Deploy file-detector Lambda function
-      run: |
+        cd ../..
+        
+        aws lambda wait function-updated --function-name ecommerce-file-detector
         aws lambda update-function-code \
           --function-name ecs-pipeline-trigger \
           --zip-file fileb://file-detector-deployment.zip
-
-    - name: Update file-detector environment variables
-      run: |
+        
+        aws lambda wait function-updated --function-name ecs-pipeline-trigger
         aws lambda update-function-configuration \
           --function-name ecs-pipeline-trigger \
           --environment Variables='{
             STEP_FUNCTIONS_ARN=${{ secrets.STEP_FUNCTIONS_ARN }}
           }'
 
-  deploy-file-archiver:
-    name: Deploy File Archiver Lambda
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ env.AWS_REGION }}
-
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
-
-    - name: Install dependencies for file-archiver
+    # Deploy file-archiver second (after file-detector completes)
+    - name: Deploy file-archiver Lambda
       run: |
         cd lambda-functions/file-archiver
         pip install -r requirements.txt -t .
-
-    - name: Create deployment package for file-archiver
-      run: |
-        cd lambda-functions/file-archiver
         zip -r ../../file-archiver-deployment.zip .
-
-    - name: Deploy file-archiver Lambda function
-      run: |
+        cd ../..
+        
+        aws lambda wait function-updated --function-name ecommerce-file-archiver
         aws lambda update-function-code \
           --function-name ecommerce-file-archiver \
           --zip-file fileb://file-archiver-deployment.zip
-
-    - name: Update file-archiver environment variables
-      run: |
+        
+        aws lambda wait function-updated --function-name ecommerce-file-archiver
         aws lambda update-function-configuration \
           --function-name ecommerce-file-archiver \
           --environment Variables='{
