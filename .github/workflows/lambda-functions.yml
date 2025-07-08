@@ -44,13 +44,13 @@ jobs:
     - name: Deploy file-detector Lambda function
       run: |
         aws lambda update-function-code \
-          --function-name ecommerce-file-detector \
+          --function-name ecs-pipeline-trigger \
           --zip-file fileb://file-detector-deployment.zip
 
     - name: Update file-detector environment variables
       run: |
         aws lambda update-function-configuration \
-          --function-name ecommerce-file-detector \
+          --function-name ecs-pipeline-trigger \
           --environment Variables='{
             STEP_FUNCTIONS_ARN=${{ secrets.STEP_FUNCTIONS_ARN }}
           }'
