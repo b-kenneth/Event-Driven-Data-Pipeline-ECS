@@ -37,18 +37,18 @@ class DataValidator:
     def validate_batch(self) -> bool:
         """Main validation orchestrator for the complete batch"""
         try:
-            self.logger.info(f"🚀 Starting validation for batch: {self.batch_id}")
-            self.logger.info(f"📁 Files to process: {len(self.products_files)} products, {len(self.orders_files)} orders, {len(self.order_items_files)} order_items")
+            self.logger.info(f"Starting validation for batch: {self.batch_id}")
+            self.logger.info(f"Files to process: {len(self.products_files)} products, {len(self.orders_files)} orders, {len(self.order_items_files)} order_items")
             
             # Stage 1: Structure validation (fail fast)
             if not self._validate_file_structures():
-                self.logger.error("❌ Structure validation failed - aborting batch")
+                self.logger.error("Structure validation failed - aborting batch")
                 return False
             
             # Stage 2: Load reference data
             reference_data = self._load_reference_data()
             if not reference_data:
-                self.logger.error("❌ Failed to load reference data - aborting batch")
+                self.logger.error("Failed to load reference data - aborting batch")
                 return False
             
             # Stage 3: Validate each dataset
@@ -69,20 +69,20 @@ class DataValidator:
             self._generate_validation_report(validation_results, overall_success)
             
             if overall_success:
-                self.logger.info("✅ Batch validation completed successfully")
+                self.logger.info("Batch validation completed successfully")
                 return True
             else:
-                self.logger.error("❌ Batch validation failed")
+                self.logger.error("Batch validation failed")
                 return False
                 
         except Exception as e:
-            self.logger.error(f"💥 Critical validation error: {str(e)}")
+            self.logger.error(f"Critical validation error: {str(e)}")
             self.logger.error(traceback.format_exc())
             return False
     
     def _validate_file_structures(self) -> bool:
         """Stage 1: Fast structure validation for ALL files"""
-        self.logger.info("🔍 Stage 1: Validating file structures for all files")
+        self.logger.info("Stage 1: Validating file structures for all files")
         
         file_groups = {
             'products': self.products_files,
@@ -106,7 +106,7 @@ class DataValidator:
                         self.logger.error(f"Invalid headers for {file_type} file: {file_key}")
                         return False
                         
-                    self.logger.info(f"✅ Structure validation passed for {file_type}: {file_key}")
+                    self.logger.info(f"Structure validation passed for {file_type}: {file_key}")
                     
                 except Exception as e:
                     self.logger.error(f"Failed to read {file_type} file {file_key}: {str(e)}")
@@ -116,7 +116,7 @@ class DataValidator:
     
     def _load_reference_data(self) -> Optional[Dict]:
         """Stage 2: Load reference data into memory from ALL files"""
-        self.logger.info("📚 Stage 2: Loading reference data from all files")
+        self.logger.info("Stage 2: Loading reference data from all files")
         
         try:
             # Load and combine all products files
@@ -148,7 +148,7 @@ class DataValidator:
                 'product_price_map': products_df.set_index('id')[['cost', 'retail_price']].to_dict('index')
             }
             
-            self.logger.info(f"✅ Reference data loaded: {len(reference_data['valid_product_ids'])} products, {len(reference_data['valid_order_ids'])} orders")
+            self.logger.info(f"Reference data loaded: {len(reference_data['valid_product_ids'])} products, {len(reference_data['valid_order_ids'])} orders")
             return reference_data
             
         except Exception as e:
@@ -157,7 +157,7 @@ class DataValidator:
     
     def _validate_products(self) -> Dict:
         """Validate ALL products files"""
-        self.logger.info(f"🛍️ Stage 3a: Validating {len(self.products_files)} products files")
+        self.logger.info(f"Stage 3a: Validating {len(self.products_files)} products files")
         
         try:
             all_chunk_results = []
@@ -198,7 +198,7 @@ class DataValidator:
                 'files_processed': len(self.products_files)
             }
             
-            self.logger.info(f"✅ Products validation completed: {len(self.products_files)} files, {total_records} total records")
+            self.logger.info(f"Products validation completed: {len(self.products_files)} files, {total_records} total records")
             self.validation_report.add_dataset_result('products', result)
             return result
             
@@ -208,7 +208,7 @@ class DataValidator:
     
     def _validate_orders(self, reference_data: Dict) -> Dict:
         """Validate ALL orders files"""
-        self.logger.info(f"📦 Stage 3b: Validating {len(self.orders_files)} orders files")
+        self.logger.info(f"Stage 3b: Validating {len(self.orders_files)} orders files")
         
         try:
             all_chunk_results = []
@@ -250,7 +250,7 @@ class DataValidator:
                 'files_processed': len(self.orders_files)
             }
             
-            self.logger.info(f"✅ Orders validation completed: {len(self.orders_files)} files, {total_records} total records")
+            self.logger.info(f"Orders validation completed: {len(self.orders_files)} files, {total_records} total records")
             self.validation_report.add_dataset_result('orders', result)
             return result
             
@@ -302,7 +302,7 @@ class DataValidator:
                 'files_processed': len(self.order_items_files)
             }
             
-            self.logger.info(f"✅ Order items validation completed: {len(self.order_items_files)} files, {total_records} total records")
+            self.logger.info(f"Order items validation completed: {len(self.order_items_files)} files, {total_records} total records")
             self.validation_report.add_dataset_result('order_items', result)
             return result
             
@@ -324,7 +324,7 @@ class DataValidator:
             self.validation_report.to_dict()
         )
         
-        self.logger.info(f"📊 Validation report stored: s3://{self.bucket_name}/{report_key}")
+        self.logger.info(f"Validation report stored: s3://{self.bucket_name}/{report_key}")
 
 def main():
     """Main entry point"""
@@ -332,13 +332,6 @@ def main():
     
     # Validate the batch
     success = validator.validate_batch()
-    
-    if success:
-        print("✅ VALIDATION_SUCCESS")
-        sys.exit(0)
-    else:
-        print("❌ VALIDATION_FAILED")
-        sys.exit(1)
 
 if __name__ == "__main__":
     main()

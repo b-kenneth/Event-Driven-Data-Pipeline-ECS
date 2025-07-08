@@ -57,35 +57,35 @@ class DataTransformer:
     def transform_batch(self) -> bool:
         """Main transformation orchestrator"""
         try:
-            self.logger.info(f"🚀 Starting transformation for batch: {self.batch_id}")
-            self.logger.info(f"📁 Files to process: {len(self.products_files)} products, {len(self.orders_files)} orders, {len(self.order_items_files)} order_items")
+            self.logger.info(f"Starting transformation for batch: {self.batch_id}")
+            self.logger.info(f"Files to process: {len(self.products_files)} products, {len(self.orders_files)} orders, {len(self.order_items_files)} order_items")
             
             # Stage 1: Load validated data
             dataframes = self._load_validated_data()
             if not dataframes:
-                self.logger.error("❌ Failed to load validated data")
+                self.logger.error("Failed to load validated data")
                 return False
             
             # Stage 2: Compute KPIs
             kpis = self._compute_kpis(dataframes)
             if not kpis:
-                self.logger.error("❌ Failed to compute KPIs")
+                self.logger.error("Failed to compute KPIs")
                 return False
             
             # Stage 3: Store KPIs in DynamoDB
             storage_success = self._store_kpis(kpis)
             if not storage_success:
-                self.logger.error("❌ Failed to store KPIs in DynamoDB")
+                self.logger.error("Failed to store KPIs in DynamoDB")
                 return False
             
             # Stage 4: Generate transformation report
             self._generate_transformation_report(kpis)
             
-            self.logger.info("✅ Batch transformation completed successfully")
+            self.logger.info("Batch transformation completed successfully")
             return True
             
         except Exception as e:
-            self.logger.error(f"💥 Critical transformation error: {str(e)}")
+            self.logger.error(f"Critical transformation error: {str(e)}")
             self.logger.error(traceback.format_exc())
             return False
         finally:
@@ -93,7 +93,7 @@ class DataTransformer:
     
     def _load_validated_data(self) -> Optional[Dict]:
         """Stage 1: Load ALL validated data from S3"""
-        self.logger.info("📚 Stage 1: Loading all validated data")
+        self.logger.info("Stage 1: Loading all validated data")
         
         try:
             # Load and union all files of each type
@@ -111,8 +111,8 @@ class DataTransformer:
             orders_count = orders_df.count()
             order_items_count = order_items_df.count()
             
-            self.logger.info(f"✅ All data loaded: {products_count} products, {orders_count} orders, {order_items_count} order items")
-            self.logger.info(f"📁 Files processed: {len(self.products_files)} products, {len(self.orders_files)} orders, {len(self.order_items_files)} order_items")
+            self.logger.info(f"All data loaded: {products_count} products, {orders_count} orders, {order_items_count} order items")
+            self.logger.info(f"Files processed: {len(self.products_files)} products, {len(self.orders_files)} orders, {len(self.order_items_files)} order_items")
             
             return {
                 'products': products_df,
@@ -184,7 +184,7 @@ class DataTransformer:
             .schema(schemas[file_type]) \
             .csv(f"s3a://{self.bucket_name}/{file_list[0]}")
         
-        self.logger.info(f"✅ Loaded {file_type} file: {file_list[0]}")
+        self.logger.info(f"Loaded {file_type} file: {file_list[0]}")
         
         # If only one file, return it
         if len(file_list) == 1:
@@ -199,14 +199,14 @@ class DataTransformer:
                 .csv(f"s3a://{self.bucket_name}/{file_key}")
             
             combined_df = combined_df.union(df)
-            self.logger.info(f"✅ Added {file_type} file: {file_key}")
+            self.logger.info(f"Added {file_type} file: {file_key}")
         
-        self.logger.info(f"✅ Combined {len(file_list)} {file_type} files into single DataFrame")
+        self.logger.info(f"Combined {len(file_list)} {file_type} files into single DataFrame")
         return combined_df
     
     def _compute_kpis(self, dataframes: Dict) -> Optional[Dict]:
         """Stage 2: Compute business KPIs"""
-        self.logger.info("🧮 Stage 2: Computing business KPIs")
+        self.logger.info("Stage 2: Computing business KPIs")
         
         try:
             # Extract dataframes
@@ -230,7 +230,7 @@ class DataTransformer:
             category_kpis_pd = category_kpis.toPandas()
             order_kpis_pd = order_kpis.toPandas()
             
-            self.logger.info(f"✅ KPIs computed: {len(category_kpis_pd)} category KPIs, {len(order_kpis_pd)} order KPIs")
+            self.logger.info(f"KPIs computed: {len(category_kpis_pd)} category KPIs, {len(order_kpis_pd)} order KPIs")
             
             return {
                 'category_kpis': category_kpis_pd,
@@ -247,7 +247,7 @@ class DataTransformer:
     
     def _store_kpis(self, kpis: Dict) -> bool:
         """Stage 3: Store KPIs in DynamoDB"""
-        self.logger.info("💾 Stage 3: Storing KPIs in DynamoDB")
+        self.logger.info("Stage 3: Storing KPIs in DynamoDB")
         
         try:
             # Store Category-Level KPIs
@@ -261,10 +261,10 @@ class DataTransformer:
             )
             
             if category_success and order_success:
-                self.logger.info("✅ All KPIs stored successfully in DynamoDB")
+                self.logger.info("All KPIs stored successfully in DynamoDB")
                 return True
             else:
-                self.logger.error("❌ Failed to store some KPIs in DynamoDB")
+                self.logger.error("Failed to store some KPIs in DynamoDB")
                 return False
                 
         except Exception as e:
@@ -289,7 +289,7 @@ class DataTransformer:
             self.transformation_report.to_dict()
         )
         
-        self.logger.info(f"📊 Transformation report stored: s3://{self.bucket_name}/{report_key}")
+        self.logger.info(f"Transformation report stored: s3://{self.bucket_name}/{report_key}")
 
 def main():
     """Main entry point"""
@@ -297,13 +297,6 @@ def main():
     
     # Transform the batch
     success = transformer.transform_batch()
-    
-    if success:
-        print("✅ TRANSFORMATION_SUCCESS")
-        sys.exit(0)
-    else:
-        print("❌ TRANSFORMATION_FAILED")
-        sys.exit(1)
 
 if __name__ == "__main__":
     main()

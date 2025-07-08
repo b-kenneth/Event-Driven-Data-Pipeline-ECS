@@ -41,7 +41,7 @@ class DynamoDBHandler:
             # Batch write to DynamoDB
             self._batch_write_items(self.category_table, items)
             
-            self.logger.info("✅ Category KPIs stored successfully")
+            self.logger.info("Category KPIs stored successfully")
             return True
             
         except Exception as e:
@@ -71,7 +71,7 @@ class DynamoDBHandler:
             # Batch write to DynamoDB
             self._batch_write_items(self.order_table, items)
             
-            self.logger.info("✅ Order KPIs stored successfully")
+            self.logger.info("Order KPIs stored successfully")
             return True
             
         except Exception as e:
