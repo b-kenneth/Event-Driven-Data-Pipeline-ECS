@@ -26,19 +26,7 @@ The pipeline was designed to solve common pain-points in e-commerce analytics:
 - **Full Observability** – CloudWatch logs, errors, custom metrics, DLQ for failed files  
 
 ## 3. High-Level Architecture
-
-```mermaid
-flowchart TD
-    A[S3 raw-data//] -- ObjectCreated --> L[Lambda File-Detector]
-    L -->|≥10 files OR 20 min timer| SF[Step Functionsstate machine]
-    subgraph Workflow
-        V[Validation Task(ECS Fargate)] --> T[Transformation Task(ECS Fargate)]
-        T --> AR[Lambda File-Archiver]
-    end
-    T -->|KPIs| DDB[(DynamoDBCategoryKPIs & OrderKPIs)]
-    AR -->|move| S3P[S3 processed/ or failed/]
-    AR -->|update| DDB2[(DynamoDBProcessedFiles)]
-```
+![architecture diagram](images/architecture_diagram.png)
 
 ### 3.1 Data Format (CSVs)  
 
@@ -72,6 +60,12 @@ flowchart TD
 2. **TransformData** – ECS Task; PySpark aggregates KPIs.  
 3. **ArchiveProcessedFiles** – Lambda moves raw files → `processed/`.  
 4. **MarkFilesAsFailed** – on any error, archive to `failed/` and log cause.  
+
+![step_functions](images/ecommerce_step_functions.png)
+
+
+### Sample pipeline notification
+![success notification](images/aws_notification.png)
 
 ## 4. Tech Stack
 
